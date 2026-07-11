@@ -250,10 +250,30 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return ConversationHandler.END
 
 
+async def unknown_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    keyboard = [["🔄 Оставить заявку заново"]]
+    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+    await update.message.reply_text(
+        "Ваша заявка уже принята — наш специалист скоро свяжется с вами. 👍\n\n"
+        "Если хотите оставить ещё одну заявку или что-то изменить — нажмите кнопку ниже.",
+        reply_markup=reply_markup
+    )
+
+
+async def restart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    if update.message.text == "🔄 Оставить заявку заново":
+        context.user_data.clear()
+        return await start(update, context)
+    return ConversationHandler.END
+
+
 def main() -> None:
     app = Application.builder().token(BOT_TOKEN).build()
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
+        entry_points=[
+            CommandHandler("start", start),
+            MessageHandler(filters.Regex("^🔄 Оставить заявку заново$"), start)
+        ],
         states={
             GAS_TYPE:      [MessageHandler(filters.TEXT & ~filters.COMMAND, gas_type)],
             CAR_BRAND:     [MessageHandler(filters.TEXT & ~filters.COMMAND, car_brand)],
@@ -267,6 +287,7 @@ def main() -> None:
         fallbacks=[CommandHandler("cancel", cancel)],
     )
     app.add_handler(conv_handler)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, unknown_message))
     print("✅ Бот запущен. Нажми Ctrl+C для остановки.")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
