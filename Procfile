@@ -1,1 +1,1 @@
-worker: py gbo_bot.py
+worker: python gbo_bot.py
