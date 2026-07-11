@@ -29,9 +29,10 @@ ADMIN_ID = 8046950575
     CAR_YEAR,
     TOTAL_MILEAGE,
     ENGINE,
+    CYLINDERS,
     NAME,
     PHONE,
-) = range(7)
+) = range(8)
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -60,7 +61,7 @@ async def gas_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await update.message.reply_text(
             "✅ Метан — отличный выбор!\n\n"
             "Метан в среднем в 3,5 раза дешевле бензина. "
-            "Плюс государственная субсидия покрывает до 2/3 стоимости установки.\n\n"
+            "Плюс действует государственная субсидия которая значительно снижает стоимость установки.\n\n"
             "Напишите марку и модель вашего автомобиля.\n"
             "Например: <b>Toyota Camry</b> или <b>Lada Vesta</b>",
             reply_markup=ReplyKeyboardRemove(),
@@ -70,7 +71,7 @@ async def gas_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await update.message.reply_text(
             "✅ Пропан — хороший вариант!\n\n"
             "Пропан в среднем в 1,8 раза дешевле бензина. "
-            "Установка дешевле метана, подходит для большинства авто.\n\n"
+            "Установка подходит для большинства авто.\n\n"
             "Напишите марку и модель вашего автомобиля.\n"
             "Например: <b>Toyota Camry</b> или <b>Lada Vesta</b>",
             reply_markup=ReplyKeyboardRemove(),
@@ -94,13 +95,19 @@ async def car_year(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     if not year_text.isdigit() or not (1990 <= int(year_text) <= 2026):
         await update.message.reply_text("Пожалуйста, введите корректный год (например: 2015)")
         return CAR_YEAR
+
     context.user_data["car_year"] = year_text
     age = 2026 - int(year_text)
+    context.user_data["car_age"] = age
+
     if age > 15 and "Метан" in context.user_data.get("gas_type", ""):
         await update.message.reply_text(
-            f"⚠️ Вашему автомобилю {age} лет.\n"
-            "Субсидия на метан действует только для авто <b>не старше 15 лет</b>.\n"
-            "Установка возможна, но без субсидии.\n\n"
+            f"⚠️ Вашему автомобилю {age} лет.\n\n"
+            "К сожалению, государственная субсидия на метан распространяется только на авто "
+            "<b>не старше 15 лет</b>.\n\n"
+            "В этом случае <b>пропан будет выгоднее</b> — установка дешевле и субсидия не нужна. "
+            "Наш специалист расскажет подробнее когда свяжется с вами.\n\n"
+            "Продолжаем оформление заявки 👇\n\n"
             "Укажите <b>общий пробег</b> автомобиля (км).\n"
             "Например: <b>120000</b>",
             parse_mode="HTML"
@@ -126,7 +133,22 @@ async def total_mileage(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
 async def engine(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data["engine"] = update.message.text
-    await update.message.reply_text("Как вас зовут?")
+    keyboard = [["4 цилиндра", "6 цилиндров"], ["8 цилиндров", "Не знаю"]]
+    reply_markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+    await update.message.reply_text(
+        "Сколько <b>цилиндров</b> у вашего двигателя?",
+        reply_markup=reply_markup,
+        parse_mode="HTML"
+    )
+    return CYLINDERS
+
+
+async def cylinders(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    context.user_data["cylinders"] = update.message.text
+    await update.message.reply_text(
+        "Как вас зовут?",
+        reply_markup=ReplyKeyboardRemove()
+    )
     return NAME
 
 
@@ -149,39 +171,69 @@ async def phone(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     year = data.get("car_year", "—")
     total_km = data.get("total_mileage", "—")
     engine_val = data.get("engine", "—")
+    cylinders_val = data.get("cylinders", "—")
     client_name = data.get("name", "—")
     phone_val = data.get("phone", "—")
+    car_age = data.get("car_age", 0)
 
+    # Определяем цену установки
     if "Метан" in gas:
-        install_cost = "от 60 000 ₽ (с субсидией от 20 000 ₽)"
+        if "6" in cylinders_val or "8" in cylinders_val:
+            install_cost = "от 100 000 ₽"
+        else:
+            install_cost = "от 80 000 ₽"
     else:
-        install_cost = "от 27 000 ₽"
+        install_cost = "от 45 000 ₽"
+
+    # Определяем статус субсидии
+    no_subsidy = "Метан" in gas and car_age > 15
+
+    # Сообщение клиенту
+    subsidy_note = ""
+    if no_subsidy:
+        subsidy_note = (
+            "\n⚠️ По вашему авто субсидия на метан не применяется — возраст более 15 лет.\n"
+            "Специалист расскажет почему в вашем случае <b>пропан может быть выгоднее</b>.\n"
+        )
 
     await update.message.reply_text(
         f"✅ Спасибо, {client_name}! Заявка принята.\n\n"
         f"<b>Предварительный расчёт:</b>\n"
         f"• Тип газа: {gas}\n"
-        f"• Стоимость установки: {install_cost}\n\n"
-        "Наш специалист свяжется с вами в течение 1-2 часов. 🚗",
+        f"• Ориентировочная стоимость установки: {install_cost}\n\n"
+        f"{subsidy_note}"
+        f"⚡ Точную стоимость вам назовёт специалист при звонке — "
+        f"она может оказаться <b>ниже</b> ориентировочной.\n\n"
+        "📌 <b>Важно:</b> в связи с высоким спросом на установку мы фиксируем запись "
+        "только после внесения небольшого аванса — это гарантирует ваше место у мастера.\n"
+        "• Аванс на карту физлица: <b>7 000 ₽</b>\n"
+        "• Аванс на счёт ИП: <b>7 700 ₽</b>\n"
+        "Реквизиты вышлет наш специалист. Аванс засчитывается в стоимость установки.\n\n"
+        "Свяжемся с вами в течение 1-2 часов. 🚗",
         parse_mode="HTML"
     )
 
-    age = 2026 - int(year) if year.isdigit() else "?"
-    if isinstance(age, int) and age > 15 and "Метан" in gas:
-        subsidy = "⚠️ Старше 15 лет — субсидия не положена"
+    # Статус субсидии для админа
+    if "Метан" in gas:
+        if car_age > 15:
+            subsidy_status = "⚠️ Старше 15 лет — субсидия не положена. Рекомендовать пропан."
+        else:
+            subsidy_status = "✅ Подходит под субсидию"
     else:
-        subsidy = "✅ Подходит под субсидию"
+        subsidy_status = "➖ Пропан — субсидия не применяется"
 
     lead_message = (
         f"🔥 <b>НОВЫЙ ЛИД — ГБО</b>\n\n"
         f"👤 Имя: {client_name}\n"
         f"📱 Телефон: {phone_val}\n\n"
         f"🚗 Авто: {car}\n"
-        f"📅 Год: {year} ({age} лет)\n"
+        f"📅 Год: {year} ({car_age} лет)\n"
         f"🔧 Двигатель: {engine_val}\n"
+        f"⚙️ Цилиндры: {cylinders_val}\n"
         f"⛽ Тип газа: {gas}\n"
         f"🛣 Общий пробег: {total_km} км\n\n"
-        f"💰 Субсидия: {subsidy}\n\n"
+        f"💰 Субсидия: {subsidy_status}\n"
+        f"💵 Ориентировочная цена: {install_cost}\n\n"
         f"🆔 Telegram ID: {update.effective_user.id}\n"
         f"👤 Username: @{update.effective_user.username or 'не указан'}"
     )
@@ -208,6 +260,7 @@ def main() -> None:
             CAR_YEAR:      [MessageHandler(filters.TEXT & ~filters.COMMAND, car_year)],
             TOTAL_MILEAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, total_mileage)],
             ENGINE:        [MessageHandler(filters.TEXT & ~filters.COMMAND, engine)],
+            CYLINDERS:     [MessageHandler(filters.TEXT & ~filters.COMMAND, cylinders)],
             NAME:          [MessageHandler(filters.TEXT & ~filters.COMMAND, name)],
             PHONE:         [MessageHandler(filters.TEXT & ~filters.COMMAND, phone)],
         },
